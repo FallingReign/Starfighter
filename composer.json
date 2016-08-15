@@ -1,0 +1,6 @@
+{
+  "require": {
+    "mustache/mustache": "~2.7",
+    "cebe/markdown": "~1.0.1"
+  } 
+}
