@@ -9,12 +9,14 @@ $custom_fields = array(
 	array("name"=> "ERT Link", "id" => 34853527, "value"=> ""),
 	array("name"=> "Article", "id" => 32254678, "value"=> "")
 );
+$problem_dc = array();
 
 if ($loggedin) {
 	if ($problem_id) {
 
 		$problem = curlWrap("/tickets/" . $problem_id . ".json", null, "GET");
 		$incidents = curlWrap("/tickets/" . $problem_id . "/incidents.json", null, "GET");
+		$dynamic_content = curlWrap("/dynamic_content/items.json", null, "GET");
 		$comments = curlWrap("/tickets/" . $problem_id . "/comments.json", null, "GET");
 
 		// get the custom fields
@@ -38,6 +40,54 @@ if ($loggedin) {
 			}
 		}
 
+		// find related dynamic content
+		//echo "<pre>", print_r($dynamic_content['items'], 1), "</pre>";
+		foreach ($dynamic_content['items'] as $key => $item) {
+			
+			$problem_pos = stripos($item['variants'][0]['content'] , $problem_id);
+
+			if ( $problem_pos !== false ) {
+				$problem_dc = $item;
+				$problem_dc['variants'][0]['html_content'] = str_replace("\r\n", '<br />',$problem_dc['variants'][0]['content']);
+
+				//echo $problem_dc['variants'][0]['html_content'];
+			}
+		}
+
+		// create new automated message for problem
+		if (isset($_POST['auto_message'])) {
+			$message = str_replace("\r\n", '\r\n', $_POST['message']);
+			$status = $_POST['status'];
+			$trigger_tag = $_POST['trigger_tag'];
+
+			$content = 'public:true,\r\nstatus:' . $status . ',\r\ntype:incident,\nproblem_id:' . $problem_id . ',\r\n~\r\n' . $message;
+			$dc_data = '{"item": {"name": "TAG: ' . $trigger_tag . '", "default_locale_id": 1,"variants": [{"locale_id": 1,"default": true,"content": "' . $content . '"}]}}';
+
+			if ($message && $status && $trigger_tag ) {
+				
+				$res_dc = curlWrap("/dynamic_content/items.json", $dc_data, "POST");
+				$problem_dc = $res_dc['item'];
+				$problem_dc['variants'][0]['html_content'] = str_replace("\n", '<br />',$problem_dc['variants'][0]['content']);
+
+				$message = str_replace('\n', '\n>', $message);
+				$res_ticket = curlWrap("/tickets/" . $problem_id . ".json", '{"ticket": { "comment":  { "body": "### Automation created\n\n\n**Status applied:** ' . $status . '\n**Triggering Tag:** ' . $trigger_tag .'\n\n>' . $message . '", "public": false },"status": "open"}}', "PUT");
+
+				echo '<p>Automated message created: ' . $res_dc['item']['name'] . '</p>';
+			}
+		} 
+		// delete automated message
+		if (isset($_POST['delete_auto_message'])) {
+			$dynamic_id = $_POST['dynamic_id'];
+			if ( $dynamic_id ) {
+				$res_dc = curlWrap("/dynamic_content/items/" . $dynamic_id . ".json", null, "DELETE");
+				
+				echo '<p>Automated message deleted: ' . $dynamic_id . '</p>';
+				echo $res_dc;
+		
+				unset($problem_dc);
+			}
+		}
+
 		// most recent comments first
 		$comments = array_reverse($comments['comments']);
 
@@ -47,7 +97,7 @@ if ($loggedin) {
 			$mass_message = str_replace("\r\n", '\n', $_POST['comment']);
 			$mass_status = $_POST['status'];
 
-			// make sure the message is not empty
+			// make sure the message is not empty and send
 			if ($_POST['comment'] && $_POST['comment'] != ''){
 
 				foreach ($incidents['tickets'] as $incident) {
@@ -73,7 +123,8 @@ if ($loggedin) {
 		$data = array(
 			"problem"=>$problem['ticket'], 
 			"incidents"=>$incidents, 
-			"fields"=>$custom_fields, 
+			"fields"=>$custom_fields,
+			"dynamic_content"=>$problem_dc,
 			"comments"=>$comments
 			);
 
@@ -169,9 +220,6 @@ if ($loggedin) {
 				unset($_POST);
 			}
 		}
-
-
-		//echo "<pre>", print_r($problems['tickets'], 1), "</pre>";
 
 		// loop through problems and apply filters
 		/*foreach ($problems['tickets'] as $pkey => $problem) {
