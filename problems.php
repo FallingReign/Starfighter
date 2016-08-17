@@ -3,6 +3,8 @@
 include __DIR__ . '/include.php';
 include __DIR__ . '/header.php';
 
+$parser = new \cebe\markdown\Markdown();
+
 $problem_id = $_GET['problem_id'];
 $custom_fields = array(
 	array("name"=> "Dev Link", "id" => 25137258, "value"=> ""),
@@ -28,6 +30,36 @@ if ($loggedin) {
 				}
 			}
 		}		
+
+		$agent_process;
+		// find agent procedure
+		foreach ($comments['comments'] as $key => $comment) {
+			if (stripos($comment['body'], "### Agent Process") !== false) {
+				$agent_process = $comment;
+				$agent_process['html_body'] = str_replace("Agent Process", "", $agent_process['html_body'] );
+				break;
+			}
+		}
+
+		// update agent process
+		if (isset($_POST['agent_process'])) {
+
+			$agent_process['html_body'] = $parser->parse($_POST['message']);
+			$message = str_replace("\r\n", '\r\n', $_POST['message']);
+			$message = str_replace('"', '\"', $message);
+
+			if ($message) {
+
+				$res_process = curlWrap("/tickets/" . $problem_id . ".json", '{"ticket": { "comment":  { "body": "### Agent Process\n\n' . $message . '", "public": false }}}', "PUT");
+
+				//$agent_process['html_body'] = $parser->parse(str_replace("Agent Process", "", $message ));
+
+				echo '<p>Process created</p>';
+				//$parser->parse($message);
+			}
+
+			unset($_POST);
+		} 
 
 		// check for mass message history
 		foreach ($comments['comments'] as $key => $comment) {
@@ -73,8 +105,12 @@ if ($loggedin) {
 				$res_ticket = curlWrap("/tickets/" . $problem_id . ".json", '{"ticket": { "comment":  { "body": "### Automation created\n\n\n**Status applied:** ' . $status . '\n**Triggering Tag:** ' . $trigger_tag .'\n\n>' . $message . '", "public": false },"status": "open"}}', "PUT");
 
 				echo '<p>Automated message created: ' . $res_dc['item']['name'] . '</p>';
+				
 			}
+
+			unset($_POST);
 		} 
+
 		// delete automated message
 		if (isset($_POST['delete_auto_message'])) {
 			$dynamic_id = $_POST['dynamic_id'];
@@ -86,6 +122,7 @@ if ($loggedin) {
 		
 				unset($problem_dc);
 			}
+			unset($_POST);
 		}
 
 		// most recent comments first
@@ -111,8 +148,9 @@ if ($loggedin) {
 
 				echo '<p>Message queued for tickets: ' . $mass_ids . '</p>';
 
-				unset($_POST);
 			}
+			
+			unset($_POST);
 		}
 
 		// sort incidents by status
@@ -125,6 +163,7 @@ if ($loggedin) {
 			"incidents"=>$incidents, 
 			"fields"=>$custom_fields,
 			"dynamic_content"=>$problem_dc,
+			"agent_process"=>$agent_process,
 			"comments"=>$comments
 			);
 
@@ -170,6 +209,8 @@ if ($loggedin) {
 						}
 					}
 				}
+
+				unset($_POST);
 			}
 		}
 
